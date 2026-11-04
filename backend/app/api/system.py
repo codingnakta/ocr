@@ -16,6 +16,7 @@ from app.models import ApiCall, User, utcnow
 from pydantic import BaseModel, Field
 
 from app.schemas.api import LoginIn
+from app.ocr.claude_engine import FALLBACK_MODELS
 from app.services import cost as cost_svc
 
 router = APIRouter(prefix="/api", tags=["system"])
@@ -75,9 +76,10 @@ def settings_info(user: User = Depends(current_user)):
         "app_env": s.app_env, "auth_mode": s.auth_mode, "desktop_mode": s.desktop_mode,
         "claude": {
             "configured": s.claude_configured,
+            "model_choices": cost_svc.model_choices(),
             # desktop app only: last 4 characters so the user can tell which key is in use
             "key_hint": f"…{key[-4:]}" if (s.desktop_mode and key) else None, "model": s.claude_model, "effort": s.claude_effort,
-            "fallbacks": s.claude_fallbacks or None,
+            "fallbacks": (s.claude_fallbacks or None) if s.claude_model in FALLBACK_MODELS else None,
             "pricing": {"input": price.input, "output": price.output, "cache_read": price.cache_read} if price else None,
             "pricing_known": known, "pricing_checked": cost_svc.PRICING_CHECKED,
             "image_limits": {"long_edge_px": s.claude_long_edge_px, "max_visual_tokens": s.claude_max_visual_tokens},
@@ -110,7 +112,8 @@ def _desktop_local_only(request: Request) -> None:
         raise HTTPException(403, "이 컴퓨터에서만 API 키를 바꿀 수 있습니다.")
 
 
-def _apply_api_key(value: str | None) -> None:
+def _save_desktop_config(field: str, env_name: str, value: str | None) -> None:
+    """Persist one desktop setting in config.json and apply it to this process."""
     import json
     import os
 
@@ -125,11 +128,11 @@ def _apply_api_key(value: str | None) -> None:
         except ValueError:
             data = {}
     if value:
-        data["anthropic_api_key"] = value
-        os.environ["ANTHROPIC_API_KEY"] = value
+        data[field] = value
+        os.environ[env_name] = value
     else:
-        data.pop("anthropic_api_key", None)
-        os.environ.pop("ANTHROPIC_API_KEY", None)
+        data.pop(field, None)
+        os.environ.pop(env_name, None)
     cfg_path.parent.mkdir(parents=True, exist_ok=True)
     tmp = cfg_path.with_suffix(".tmp")
     tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -161,15 +164,30 @@ def set_api_key(body: ApiKeyIn, request: Request, user: User = Depends(current_u
         raise HTTPException(400, "이 API 키로는 모델을 사용할 권한이 없습니다.") from e
     except Exception:
         warning = "인터넷 연결 문제로 키를 확인하지 못했지만 저장했습니다."
-    _apply_api_key(key)
+    _save_desktop_config("anthropic_api_key", "ANTHROPIC_API_KEY", key)
     return {"ok": True, "warning": warning, "key_hint": f"…{key[-4:]}"}
 
 
 @router.delete("/settings/api-key")
 def delete_api_key(request: Request, user: User = Depends(current_user)):
     _desktop_local_only(request)
-    _apply_api_key(None)
+    _save_desktop_config("anthropic_api_key", "ANTHROPIC_API_KEY", None)
     return {"ok": True}
+
+
+class ModelIn(BaseModel):
+    model: str = Field(max_length=64)
+
+
+@router.post("/settings/model")
+def set_model(body: ModelIn, request: Request, user: User = Depends(current_user)):
+    """Desktop app: choose the Claude model used for new OCR jobs."""
+    _desktop_local_only(request)
+    allowed = {m["id"] for m in cost_svc.MODEL_CHOICES}
+    if body.model not in allowed:
+        raise HTTPException(400, "지원하지 않는 모델입니다.")
+    _save_desktop_config("claude_model", "OCR_CLAUDE_MODEL", body.model)
+    return {"ok": True, "model": body.model}
 
 
 @router.get("/usage")
@@ -222,7 +240,8 @@ def usage(days: int = 30, db: Session = Depends(get_db), user: User = Depends(cu
 # ------------------------------------------------------------- evaluation --
 @router.post("/evaluations")
 async def evaluate(image: UploadFile = File(...), ground_truth: str = Form(default=""),
-                   engines: str = Form(default="local,ai,hybrid"), user: User = Depends(current_user)):
+                   engines: str = Form(default="local,ai,hybrid"), models: str = Form(default=""),
+                   user: User = Depends(current_user)):
     """Run several engines on one image and compare. CER/WER only with ground truth."""
     from starlette.concurrency import run_in_threadpool
 
@@ -239,4 +258,6 @@ async def evaluate(image: UploadFile = File(...), ground_truth: str = Form(defau
         raise HTTPException(400, "engines: local, ai, hybrid 중 선택")
     if any(n != "local" for n in names) and not s.claude_configured:
         raise HTTPException(400, "Claude API 키가 없어 ai/hybrid 평가를 할 수 없습니다.")
-    return await run_in_threadpool(evaluate_image, data, ground_truth, names, user.id)
+    allowed = {m["id"] for m in cost_svc.MODEL_CHOICES} | {s.claude_model}
+    model_list = [m.strip() for m in models.split(",") if m.strip() in allowed] or [s.claude_model]
+    return await run_in_threadpool(evaluate_image, data, ground_truth, names, user.id, model_list)

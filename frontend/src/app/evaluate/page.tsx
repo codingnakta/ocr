@@ -1,10 +1,11 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { FlaskConical, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge, Card, CardContent, CardDescription, CardHeader, CardTitle, Label, Switch, Textarea } from "@/components/ui/primitives";
-import { apiUpload } from "@/lib/api";
+import { apiGet, apiUpload } from "@/lib/api";
+import type { SettingsInfo } from "@/types/api";
 import { formatUsd } from "@/lib/utils";
 
 interface EvalResult {
@@ -28,7 +29,17 @@ const NAMES: Record<string, string> = { local: "로컬 (RapidOCR)", ai: "AI (Cla
 export default function EvaluatePage() {
   const [file, setFile] = useState<File | null>(null);
   const [gt, setGt] = useState("");
-  const [engines, setEngines] = useState<Record<string, boolean>>({ local: true, ai: true, hybrid: true });
+  const [engines, setEngines] = useState<Record<string, boolean>>({ local: true, ai: false, hybrid: true });
+  const [choices, setChoices] = useState<{ id: string; name: string; per_page_usd: number }[]>([]);
+  const [models, setModels] = useState<Record<string, boolean>>({});
+  useEffect(() => {
+    apiGet<SettingsInfo>("/api/settings")
+      .then((st) => {
+        setChoices(st.claude.model_choices ?? []);
+        setModels({ [st.claude.model]: true });
+      })
+      .catch(() => undefined);
+  }, []);
   const [busy, setBusy] = useState(false);
   const [res, setRes] = useState<{ ground_truth_provided: boolean; note: string | null; results: EvalResult[] } | null>(null);
 
@@ -40,6 +51,7 @@ export default function EvaluatePage() {
     fd.append("image", file);
     fd.append("ground_truth", gt);
     fd.append("engines", Object.keys(engines).filter((k) => engines[k]).join(","));
+    fd.append("models", Object.keys(models).filter((k) => models[k]).join(","));
     try {
       setRes(await apiUpload("/api/evaluations", fd));
     } catch (e) {
@@ -72,7 +84,20 @@ export default function EvaluatePage() {
                 </label>
               ))}
             </div>
-            <p className="text-xs text-muted-foreground">AI·하이브리드 평가는 API 비용이 발생합니다 (이미지당 약 $0.03~0.07).</p>
+            {choices.length > 0 && (
+              <div>
+                <p className="mb-1 text-sm font-medium">비교할 Claude 모델 (AI·하이브리드)</p>
+                <div className="flex flex-wrap gap-4">
+                  {choices.map((m) => (
+                    <label key={m.id} className="flex items-center gap-2 text-sm">
+                      <Switch checked={!!models[m.id]} onCheckedChange={(v) => setModels({ ...models, [m.id]: v })} />
+                      {m.name.replace("Claude ", "")} <span className="text-xs text-muted-foreground">≈{formatUsd(m.per_page_usd)}/쪽</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
+            <p className="text-xs text-muted-foreground">AI·하이브리드 평가는 선택한 모델마다 API 비용이 발생합니다.</p>
             <Button onClick={run} disabled={!file || busy}>
               {busy ? <Loader2 className="animate-spin" /> : <FlaskConical />} 평가 실행
             </Button>
@@ -88,10 +113,10 @@ export default function EvaluatePage() {
           {res.note && <p className="rounded-lg bg-warning-soft p-3 text-sm">{res.note}</p>}
           <div className="grid gap-4 lg:grid-cols-3">
             {res.results.map((r) => (
-              <Card key={r.engine}>
+              <Card key={`${r.engine}-${r.model ?? "local"}`}>
                 <CardHeader>
                   <CardTitle>{NAMES[r.engine] ?? r.engine}</CardTitle>
-                  <CardDescription>{r.model ?? "로컬"}</CardDescription>
+                  <CardDescription>{r.model ?? "로컬 (무료)"}</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-3 text-sm">
                   {r.error ? (

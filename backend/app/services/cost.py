@@ -139,3 +139,20 @@ def learned_ratio(db, model: str) -> float | None:
     act = sum(r[0] for r in rows)
     est = sum(r[1] for r in rows)
     return act / est if est > 0 else None
+
+
+# Models offered in the desktop app's settings (current generation).
+MODEL_CHOICES = [
+    {"id": "claude-opus-5-5", "name": "Claude Opus 5.5", "note": "가장 정확 (기본값)"},
+    {"id": "claude-sonnet-5-5", "name": "Claude Sonnet 5.5", "note": "균형 — Opus의 약 절반 비용"},
+    {"id": "claude-haiku-5-5", "name": "Claude Haiku 5.5", "note": "가장 저렴 — 정확도는 직접 확인 필요"},
+]
+
+
+def model_choices() -> list[dict]:
+    """Choices with an estimated cost per page (typical photo, ~25 lines, AI mode)."""
+    out = []
+    for m in MODEL_CHOICES:
+        e = estimate_page(3024, 4032, regions=25, model=m["id"])
+        out.append({**m, "per_page_usd": round(e.cost_usd, 4)})
+    return out

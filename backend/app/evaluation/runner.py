@@ -22,20 +22,27 @@ def _text(regions) -> str:
     return "\n".join(r.text for r in regions if r.text.strip())
 
 
-def evaluate_image(data: bytes, ground_truth: str, engines: list[str], owner_id: str | None = None) -> dict:
+def evaluate_image(data: bytes, ground_truth: str, engines: list[str], owner_id: str | None = None,
+                   models: list[str] | None = None) -> dict:
     from app.services.ocr_service import DbLedger
 
     img = load_oriented(data)
     bgr = pil_to_bgr(img)
     gt = (ground_truth or "").strip()
     results = []
+    runs = []
     for name in engines:
+        if name == "local":
+            runs.append((name, None))
+        else:
+            runs.extend((name, m) for m in (models or [None]))
+    for name, model in runs:
         ledger = DbLedger(owner_id, None, None, None) if owner_id else NullLedger()
         t0 = time.monotonic()
         try:
-            out = run_page_ocr(bgr, name, ledger)
+            out = run_page_ocr(bgr, name, ledger, claude_model=model)
         except OcrError as e:
-            results.append({"engine": name, "error": str(e)})
+            results.append({"engine": name, "model": model, "error": str(e)})
             continue
         elapsed = time.monotonic() - t0
         regs = out.result.regions

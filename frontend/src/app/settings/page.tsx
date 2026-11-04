@@ -63,18 +63,21 @@ export default function SettingsPage() {
       </div>
 
       {s.desktop_mode && <ApiKeyCard s={s} onSaved={() => apiGet<SettingsInfo>("/api/settings").then(setS)} />}
+      {s.desktop_mode && <ModelCard s={s} onSaved={() => apiGet<SettingsInfo>("/api/settings").then(setS)} />}
 
       <div className="grid gap-4 md:grid-cols-2">
         <Card>
           <CardHeader>
             <CardTitle>Claude API</CardTitle>
-            <CardDescription>모델은 서버 환경변수 OCR_CLAUDE_MODEL로 변경합니다.</CardDescription>
+            <CardDescription>
+              {s.desktop_mode ? "모델은 위의 'Claude 모델'에서 고릅니다." : "모델은 서버 환경변수 OCR_CLAUDE_MODEL로 변경합니다."}
+            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-2 text-sm">
             <Row k="상태" v={s.claude.configured ? <Badge variant="success">API 키 설정됨</Badge> : <Badge variant="destructive">API 키 없음</Badge>} />
             <Row k="모델" v={<code data-testid="model">{s.claude.model}</code>} />
             <Row k="effort" v={s.claude.effort} />
-            <Row k="거절 시 대체 모델" v={s.claude.fallbacks ?? "사용 안 함"} />
+            <Row k="거절 시 대체 모델" v={s.claude.fallbacks ?? "해당 없음"} />
             <Row
               k="단가 (100만 토큰)"
               v={s.claude.pricing ? `입력 $${s.claude.pricing.input} · 출력 $${s.claude.pricing.output}` : "알 수 없음 (추정)"}
@@ -240,6 +243,57 @@ function ApiKeyCard({ s, onSaved }: { s: SettingsInfo; onSaved: () => void }) {
             </Button>
           )}
         </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function ModelCard({ s, onSaved }: { s: SettingsInfo; onSaved: () => void }) {
+  const [busy, setBusy] = useState<string | null>(null);
+  const choose = async (id: string) => {
+    setBusy(id);
+    try {
+      await apiSend("POST", "/api/settings/model", { model: id });
+      toast.success("OCR 모델을 바꿨습니다. 새로 시작하는 OCR부터 적용됩니다.");
+      onSaved();
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  };
+  return (
+    <Card data-testid="model-card">
+      <CardHeader>
+        <CardTitle>Claude 모델 (AI·하이브리드 OCR)</CardTitle>
+        <CardDescription>
+          저렴한 모델일수록 손글씨를 틀릴 수 있습니다. <a href="/evaluate/" className="text-primary underline">정확도 평가</a>에서
+          내 필기로 모델을 비교해 보고 고르세요. 비용은 사진 1쪽 기준 추정치입니다.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="grid gap-2 sm:grid-cols-3">
+        {(s.claude.model_choices ?? []).map((m) => {
+          const active = s.claude.model === m.id;
+          return (
+            <button
+              key={m.id}
+              type="button"
+              onClick={() => !active && choose(m.id)}
+              disabled={!!busy}
+              className={`rounded-lg border p-3 text-left transition-colors ${active ? "border-primary bg-accent ring-1 ring-primary" : "hover:bg-muted"}`}
+              data-testid={`model-${m.id}`}
+            >
+              <div className="flex items-center gap-2 text-sm font-medium">
+                {busy === m.id && <Loader2 className="size-4 animate-spin" />}
+                {m.name}
+                {active && <Badge className="ml-auto">사용 중</Badge>}
+              </div>
+              <div className="mt-1 text-lg font-semibold tabular-nums">≈ {formatUsd(m.per_page_usd)} / 쪽</div>
+              <p className="mt-0.5 text-xs text-muted-foreground">{m.note}</p>
+              <p className="text-[11px] text-muted-foreground">200쪽 ≈ {formatUsd(m.per_page_usd * 200, 2)}</p>
+            </button>
+          );
+        })}
       </CardContent>
     </Card>
   );

@@ -37,6 +37,9 @@ from app.services.cost import claude_image_size, usage_cost, visual_tokens
 log = logging.getLogger(__name__)
 
 FALLBACK_BETA = "server-side-fallback-2026-07-01"
+# Models that accept the server-side refusal fallback (`fallbacks: "default"`).
+# Haiku models have no server-side fallback: sending the parameter would fail.
+FALLBACK_MODELS = {"claude-fable-5-1", "claude-opus-5-5", "claude-opus-5", "claude-sonnet-5-5"}
 
 
 class Ledger(Protocol):
@@ -131,7 +134,7 @@ class ClaudeEngine:
             output_format=output_model,
             output_config={"effort": self.effort},
         )
-        if self.fallbacks:
+        if self.fallbacks and self.model in FALLBACK_MODELS:
             kw["betas"] = [FALLBACK_BETA]
             kw["fallbacks"] = self.fallbacks
         return kw

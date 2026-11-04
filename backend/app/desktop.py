@@ -74,6 +74,13 @@ def configure_environment() -> Path:
                 os.environ["ANTHROPIC_API_KEY"] = key
         except ValueError:
             pass
+    if cfg.exists() and not os.environ.get("OCR_CLAUDE_MODEL"):
+        try:
+            model = json.loads(cfg.read_text(encoding="utf-8")).get("claude_model")
+            if model:
+                os.environ["OCR_CLAUDE_MODEL"] = model
+        except ValueError:
+            pass
     return data
 
 

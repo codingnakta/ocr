@@ -153,6 +153,7 @@ export interface SettingsInfo {
   claude: {
     configured: boolean;
     key_hint?: string | null;
+    model_choices?: { id: string; name: string; note: string; per_page_usd: number }[];
     model: string;
     effort: string;
     fallbacks: string | null;
