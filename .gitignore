@@ -33,3 +33,5 @@ frontend/e2e/fixtures/
 # desktop build outputs
 backend/dist/
 backend/build/
+backend/app/VERSION
+

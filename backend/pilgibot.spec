@@ -17,6 +17,9 @@ if not (FRONTEND_OUT / "index.html").exists():
     raise SystemExit("frontend/out missing: run `STATIC_EXPORT=1 npm run build` in frontend/ first")
 
 datas = [(str(FRONTEND_OUT), "frontend_out")]
+VERSION_FILE = HERE / "app" / "VERSION"  # written by CI (1.0.<run number>); used for the in-app updater
+if VERSION_FILE.exists():
+    datas.append((str(VERSION_FILE), "app"))
 if MODELS.exists():
     datas.append((str(MODELS), "models_data"))
 binaries = []

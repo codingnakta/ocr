@@ -12,19 +12,20 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.core.db import get_db
 from app.core.security import COOKIE, current_user, limiter, make_session, verify_password
-from app.models import ApiCall, User, utcnow
+from app.models import ApiCall, Job, User, utcnow
 from pydantic import BaseModel, Field
 
 from app.schemas.api import LoginIn
 from app.ocr.claude_engine import FALLBACK_MODELS
 from app.services import cost as cost_svc
+from app.version import APP_VERSION
 
 router = APIRouter(prefix="/api", tags=["system"])
 
 
 @router.get("/health")
 def health():
-    return {"ok": True}
+    return {"ok": True, "version": APP_VERSION}
 
 
 # ------------------------------------------------------------------ auth --
@@ -73,7 +74,7 @@ def settings_info(user: User = Depends(current_user)):
         local = {"available": False, "note": f"로컬 OCR 초기화 실패: {type(e).__name__}"}
     key = s.anthropic_api_key.get_secret_value() if s.claude_configured else ""  # type: ignore[union-attr]
     return {
-        "app_env": s.app_env, "auth_mode": s.auth_mode, "desktop_mode": s.desktop_mode,
+        "app_env": s.app_env, "auth_mode": s.auth_mode, "desktop_mode": s.desktop_mode, "version": APP_VERSION,
         "claude": {
             "configured": s.claude_configured,
             "model_choices": cost_svc.model_choices(),
@@ -106,10 +107,10 @@ class ApiKeyIn(BaseModel):
 def _desktop_local_only(request: Request) -> None:
     s = get_settings()
     if not s.desktop_mode or not s.pilgibot_config_file:
-        raise HTTPException(403, "API 키는 서버 환경변수로 설정합니다 (데스크톱 앱에서만 화면에서 설정 가능).")
+        raise HTTPException(403, "데스크톱 앱에서만 쓸 수 있는 기능입니다 (서버 버전은 환경변수로 설정합니다).")
     host = request.client.host if request.client else ""
     if host not in ("127.0.0.1", "::1", "localhost"):
-        raise HTTPException(403, "이 컴퓨터에서만 API 키를 바꿀 수 있습니다.")
+        raise HTTPException(403, "이 컴퓨터에서만 바꿀 수 있습니다.")
 
 
 def _save_desktop_config(field: str, env_name: str, value: str | None) -> None:
@@ -235,6 +236,44 @@ def usage(days: int = 30, db: Session = Depends(get_db), user: User = Depends(cu
         "note": "비용은 API 응답의 실제 토큰 사용량 × 공식 단가로 계산합니다. 'uncertain'은 중단으로 결과를 받지 못해 "
                 "과금 여부를 알 수 없는 호출이며 예상 비용으로 표시됩니다.",
     }
+
+
+# ----------------------------------------------------------------- update --
+@router.get("/update")
+def update_info(refresh: int = 0, user: User = Depends(current_user)):
+    """Latest desktop release vs. the running version. Only meaningful in desktop mode."""
+    s = get_settings()
+    if not s.desktop_mode:
+        return {"supported": False, "current": APP_VERSION}
+    from app.services import updater
+
+    return {"supported": True, **updater.check(refresh=bool(refresh)), "state": updater.status()}
+
+
+@router.get("/update/status")
+def update_status(user: User = Depends(current_user)):
+    from app.services import updater
+
+    return updater.status()
+
+
+@router.post("/update/install")
+def update_install(request: Request, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    """Download the newest installer, verify it, run it silently and restart (Windows installer builds)."""
+    _desktop_local_only(request)
+    from app.services import updater
+
+    info = updater.check()
+    if info["error"] and not info["latest"]:
+        raise HTTPException(503, info["error"])
+    if not info["available"]:
+        raise HTTPException(400, "이미 최신 버전입니다.")
+    if not info["can_self_update"]:
+        raise HTTPException(400, "이 설치 방식에서는 자동 업데이트를 지원하지 않습니다. Releases에서 새 버전을 받아 설치하세요.")
+    active = db.scalar(select(func.count()).select_from(Job).where(Job.status.in_(("queued", "running")))) or 0
+    if active:
+        raise HTTPException(409, f"진행 중인 작업이 {active}개 있습니다. 끝난 뒤(또는 일시정지한 뒤) 업데이트하세요.")
+    return updater.start_install(info)
 
 
 # ------------------------------------------------------------- evaluation --
