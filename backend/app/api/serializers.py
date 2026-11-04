@@ -58,7 +58,11 @@ def document_out(db: Session, doc: Document, with_pages: bool = True) -> dict:
     }
     if with_pages:
         out["pages"] = [page_out(p, i + 1, doc.id) for i, p in enumerate(pages)]
-        job = active_job(db, doc.id)
+        from app.models import Job
+
+        job = active_job(db, doc.id) or db.scalar(
+            select(Job).where(Job.document_id == doc.id, Job.kind == "ocr").order_by(Job.created_at.desc()))
+        # latest OCR job (active or finished) so the UI can show "completed" / failures
         out["active_job"] = progress(db, job) if job else None
         exps = db.scalars(select(Export).where(Export.document_id == doc.id).order_by(Export.created_at.desc())
                           .limit(20)).all()

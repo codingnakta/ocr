@@ -110,15 +110,19 @@ def get_export(ex: Export = Depends(owned_export)):
 
 
 def _stream(ex: Export, doc_title: str) -> StreamingResponse:
-    from urllib.parse import quote
+    import re
 
     storage = get_storage()
     if ex.status != "done" or not ex.storage_key or not storage.exists(ex.storage_key):
         raise HTTPException(404, "다운로드할 파일이 없습니다.")
-    safe = "".join(ch for ch in doc_title if ch.isalnum() or ch in " _-()").strip() or "document"
-    fname = f"{safe}.{ex.format}"
+    # ASCII-only file name: some Chromium builds discard RFC 5987 (filename*) names that
+    # contain Hangul and save the file as "download". The Korean title is kept inside
+    # the PDF metadata instead.
+    ascii_part = re.sub(r"[^A-Za-z0-9]+", "-", doc_title).strip("-")[:40]
+    stamp = (ex.created_at.strftime("%Y%m%d") if ex.created_at else "")
+    fname = "_".join(x for x in ("pilgibot", ascii_part, stamp, ex.document_id[:6]) if x) + f".{ex.format}"
     headers = {
-        "Content-Disposition": f"attachment; filename=\"document.{ex.format}\"; filename*=UTF-8''{quote(fname)}",
+        "Content-Disposition": f'attachment; filename="{fname}"',
         "Cache-Control": "private, no-store",
         "X-Content-Type-Options": "nosniff",
     }

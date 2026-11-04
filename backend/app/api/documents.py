@@ -41,10 +41,12 @@ async def _read_limited(f: UploadFile, limit: int) -> bytes:
 async def _ingest_uploads(db: Session, doc: Document, files: list[UploadFile]) -> dict:
     s = get_settings()
     added, errors = [], []
+    added_ids: list[str] = []
     for f in files:
         try:
             data = await _read_limited(f, s.max_file_bytes)
             pages = ingest_file(db, doc, f.filename, data, f.content_type)
+            added_ids.extend(p.id for p in pages)
             db.commit()
             added.extend(pages)
         except UploadError as e:
@@ -57,7 +59,7 @@ async def _ingest_uploads(db: Session, doc: Document, files: list[UploadFile]) -
             await f.close()
     doc.updated_at = utcnow()
     db.commit()
-    return {"added_pages": len(added), "errors": errors}
+    return {"added_pages": len(added), "page_ids": added_ids, "errors": errors}
 
 
 @router.get("")
@@ -90,13 +92,17 @@ async def create_document(request: Request, db: Session = Depends(get_db), user:
 
 
 @router.post("/{document_id}/files")
-async def upload_files(files: list[UploadFile] = File(...), doc: Document = Depends(owned_document),
+async def upload_files(files: list[UploadFile] = File(...), brief: bool = Query(False),
+                       doc: Document = Depends(owned_document),
                        db: Session = Depends(get_db), user: User = Depends(current_user)):
+    """Add files. `brief=1` returns only the new page ids (used for big batch uploads)."""
     limiter.hit(f"upload:{user.id}", get_settings().rate_limit_uploads_per_min, 60)
     from app.services.jobs import active_job
 
     j = active_job(db, doc.id)
     result = await _ingest_uploads(db, doc, files)
+    if brief:
+        return {"upload": result, "page_count": len(doc.pages)}
     db.refresh(doc)
     out = document_out(db, doc)
     out["upload"] = result

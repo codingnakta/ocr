@@ -28,6 +28,7 @@ from app.ocr.local_engine import LocalOcrEngine, filter_quads, get_local_engine,
 log = logging.getLogger(__name__)
 
 MODES = ("ai", "local", "hybrid")
+ORIENT_MIN_P = 0.8  # minimum page-orientation model probability to act on
 
 
 @dataclass
@@ -44,28 +45,61 @@ def _detect(local: LocalOcrEngine, img: np.ndarray) -> list[DetectedLine]:
     return sort_reading_order([DetectedLine(key="", quad=q) for q in quads])
 
 
+def _cls_fraction(local: LocalOcrEngine, img: np.ndarray, lines: list[DetectedLine]) -> tuple[float, float, int]:
+    """Fraction of lines the 0/180 classifier calls upside down, for the crops as they
+    are and for the same crops flipped. A trustworthy verdict flips with the image."""
+    import cv2
+
+    crops = [crop_quad(img, ln.quad) for ln in lines[:20]]
+    if not crops:
+        return 0.0, 0.0, 0
+    up, down = local.line_orientation_votes(crops)
+    up_f, down_f = local.line_orientation_votes([cv2.rotate(c, cv2.ROTATE_180) for c in crops])
+    n = len(crops)
+    return down / n, down_f / n, n
+
+
 def _orient_and_deskew(local: LocalOcrEngine, pp: Preprocessed, cfg: dict) -> list[DetectedLine]:
+    from app.ocr.orientation import get_orientation_model
+
     lines = _detect(local, pp.image)
-    if cfg.get("orientation") and len(lines) >= 3:
-        if vertical_fraction([ln.quad for ln in lines]) > 0.6:
-            best = None
-            for deg in (90, 270):
-                trial = Preprocessed(image=pp.image, H=pp.H.copy(), steps=list(pp.steps))
-                rotate_quarter(trial, deg)
-                tl = _detect(local, trial.image)
-                crops = [crop_quad(trial.image, ln.quad) for ln in tl[:20]]
-                up, down = local.line_orientation_votes(crops)
-                if best is None or up - down > best[0]:
-                    best = (up - down, trial, tl)
-            if best is not None:
-                pp.image, pp.H, pp.steps = best[1].image, best[1].H, best[1].steps
-                lines = best[2]
+    if cfg.get("orientation") and len(lines) >= 2:
+        model = get_orientation_model()
+        doc_rot, doc_p = model.predict(pp.image) if model else (0, 0.0)
+        vertical = vertical_fraction([ln.quad for ln in lines]) > 0.6
+        rotate_by = 0
+        if vertical:
+            # text runs vertically: page is sideways. Prefer the page model's 90/270.
+            if doc_rot in (90, 270) and doc_p >= ORIENT_MIN_P:
+                rotate_by = 360 - doc_rot
+            else:
+                best = None
+                for deg in (90, 270):
+                    trial = Preprocessed(image=pp.image, H=pp.H.copy(), steps=list(pp.steps))
+                    rotate_quarter(trial, deg)
+                    tl = _detect(local, trial.image)
+                    d, df, n = _cls_fraction(local, trial.image, tl)
+                    score = df - d  # upright crops: few "180" votes, flipped: many
+                    if best is None or score > best[0]:
+                        best = (score, deg)
+                rotate_by = best[1] if best else 0
         else:
-            crops = [crop_quad(pp.image, ln.quad) for ln in lines[:20]]
-            up, down = local.line_orientation_votes(crops)
-            if down >= 3 and down > 1.5 * up:
-                rotate_quarter(pp, 180)
-                lines = _detect(local, pp.image)
+            d, df, n = _cls_fraction(local, pp.image, lines)
+            cls_says_flipped = n >= 3 and d >= 0.8 and df <= 0.2
+            cls_says_upright = n >= 3 and d <= 0.2 and df >= 0.8
+            # Rotate only on confident evidence. Measured: the page model gave p=0.50 for
+            # an upright photo (wrong) but p>=0.9 when right; the line classifier is only
+            # decisive on printed text. Ambiguous pages are left as they are; in AI/hybrid
+            # mode Claude reports a needed rotation and the page is corrected then.
+            if doc_rot == 180 and doc_p >= ORIENT_MIN_P and not cls_says_upright:
+                rotate_by = 180
+            elif cls_says_flipped and not (doc_rot == 0 and doc_p >= ORIENT_MIN_P):
+                rotate_by = 180
+            pp.steps.append({"step": "orientation_check", "page_model": [doc_rot, round(doc_p, 3)],
+                             "line_cls_180": round(d, 2), "line_cls_180_flipped": round(df, 2)})
+        if rotate_by:
+            rotate_quarter(pp, rotate_by)
+            lines = _detect(local, pp.image)
     if cfg.get("deskew") and lines:
         ang = estimate_skew([ln.quad for ln in lines])
         if ang is not None and 0.4 <= abs(ang) <= 15:
@@ -128,6 +162,20 @@ def run_page_ocr(display_bgr: np.ndarray, mode: str, ledger, steps: dict | None 
         t = time.monotonic()
         out, sent, usage = claude.read_page(pp.image, lines, ledger)
         api_calls += 1
+        rot = getattr(out, "page_rotation", 0) or 0
+        if rot in (90, 180, 270) and cfg.get("orientation", True):
+            # Claude says the text is not upright: fix the image and read again (once),
+            # instead of keeping a transcription made from a rotated page.
+            raw["claude_page_rotated_attempt"] = out.model_dump()
+            rotate_quarter(pp, rot)
+            lines = _detect(local, pp.image) if local else []
+            if local and mode == "hybrid" and lines:
+                crops_ = [crop_quad(pp.image, ln.quad) for ln in lines]
+                for ln, (txt, score) in zip(lines, local.recognize_crops(crops_)):
+                    ln.local_text, ln.local_score = txt, score
+            out, sent, usage = claude.read_page(pp.image, lines, ledger)
+            api_calls += 1
+            warnings.append(f"Claude가 페이지가 {rot}° 회전되어 있다고 판단해 바로 세운 뒤 다시 인식했습니다.")
         timings["claude_page"] = time.monotonic() - t
         raw["claude_page"] = out.model_dump()
         raw["claude_image"] = {"w": sent.width, "h": sent.height}

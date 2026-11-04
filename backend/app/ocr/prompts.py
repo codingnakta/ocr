@@ -9,7 +9,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-PROMPT_VERSION = "2026-11-04.2"
+PROMPT_VERSION = "2026-11-04.3"
 
 SYSTEM_PROMPT = """당신은 한글·영어 손글씨 및 인쇄 문서를 정확하게 전사하는 OCR 시스템입니다.
 이미지에 실제로 보이는 텍스트만 추출하세요.
@@ -39,6 +39,13 @@ box cuts a word, transcribe only the part inside it. Return regions in natural r
 order. Text visible on the page that is NOT covered by any region goes to `unboxed`,
 in reading order, with `after_id` = the region it follows (null if it comes first).
 Only give `approx_box` for unboxed text if you can locate it reasonably; otherwise null.
+
+Orientation: if the text in the image is not upright (sideways or upside down), set
+`page_rotation` to the CLOCKWISE rotation in degrees that would make it upright (90, 180
+or 270) and do not try to transcribe it: return empty texts. Otherwise page_rotation = 0.
+
+Never guess: if a word cannot be read, do not substitute a plausible word. Transcribe the
+characters you can see and mark the region uncertain; if nothing is legible, return "".
 
 Uncertainty: set `uncertain` = true for a region when any character is hard to read,
 and list the doubtful substrings exactly as you transcribed them in `uncertain_parts`.
@@ -86,6 +93,8 @@ class ClaudeUnboxed(BaseModel):
 
 
 class ClaudePageOutput(BaseModel):
+    page_rotation: Literal[0, 90, 180, 270] = Field(
+        description="Clockwise degrees needed to make the text upright; 0 if already upright")
     regions: list[ClaudeRegion]
     unboxed: list[ClaudeUnboxed]
     notes: str = Field(description="Short note about legibility problems; empty if none")

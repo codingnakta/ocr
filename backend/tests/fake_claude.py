@@ -62,7 +62,7 @@ class FakeClaude:
                 unboxed.append(ClaudeUnboxed(text=t, uncertain=False, uncertain_parts=[], after_id=None,
                                              approx_box=None, block=i + 1, block_type="paragraph"))
         h, w = img.shape[:2]
-        out = ClaudePageOutput(regions=regions, unboxed=unboxed, notes="")
+        out = ClaudePageOutput(page_rotation=0, regions=regions, unboxed=unboxed, notes="")
         return out, SentImage("", "image/jpeg", w, h, 1.0, 1.0), usage
 
     def reread_lines(self, crops, ledger, purpose="reread"):

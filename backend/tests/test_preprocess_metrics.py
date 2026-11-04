@@ -86,3 +86,23 @@ def test_rotated_photo_auto_orientation():
     assert any(s["step"] == "orientation" for s in out.steps)
     text = " ".join(r.text for r in out.result.regions)
     assert "Upside" in text and "Fourth" in text
+
+
+@pytest.mark.parametrize("family,seed,kw", [
+    ("nanum-pen-script", 11, dict(perspective=0.04, shading=0.25, noise=3)),  # regression: was flipped
+    ("gaegu", 3, {}),
+    ("printed", 1, dict(wobble=0, paper=False)),
+])
+def test_orientation_upright_kept_and_flipped_fixed(family, seed, kw):
+    """An upright Korean handwriting page must NOT be rotated (the old line-classifier
+    rule flipped it, and Claude then invented text); an upside-down copy must be."""
+    from app.ocr.claude_engine import NullLedger
+    from app.ocr.pipeline import run_page_ocr
+
+    if family != "printed" and not fonts_available():
+        pytest.skip("fonts missing")
+    p = render_page(KO_SAMPLE, family=family, seed=seed, **kw)
+    up = run_page_ocr(pil_to_bgr(p.image), "local", NullLedger())
+    assert not any(s["step"] == "orientation" for s in up.steps), up.steps
+    flipped = run_page_ocr(pil_to_bgr(p.image.rotate(180)), "local", NullLedger())
+    assert any(s["step"] == "orientation" and s["rotate_cw"] == 180 for s in flipped.steps), flipped.steps

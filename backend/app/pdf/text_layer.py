@@ -37,29 +37,65 @@ def _clean(text: str) -> str:
     return "".join(ch for ch in t if ch.isprintable())
 
 
+HEIGHT_FILL = 0.85  # text height relative to the detected line box (boxes include padding)
+
+
+def _resolve_overlaps(quads: list[list[list[float]]]) -> list[list[list[float]]]:
+    """Split horizontal overlaps between boxes on the same row at the midpoint.
+
+    Detector boxes are padded, so neighbouring boxes on one row often overlap (e.g.
+    "비동기식 :" and "입력이 바뀌는 ..."). Overlapping text runs make drag-selection in
+    viewers ambiguous at the border, so each run is trimmed to its own half."""
+    out = [[list(p) for p in q] for q in quads]
+    boxes = [[min(p[0] for p in q), min(p[1] for p in q), max(p[0] for p in q), max(p[1] for p in q)] for q in out]
+    order = sorted(range(len(out)), key=lambda i: boxes[i][0])
+    for a_i, i in enumerate(order):
+        for j in order[a_i + 1:]:
+            bi, bj = boxes[i], boxes[j]
+            if bj[0] >= bi[2]:
+                continue
+            vo = min(bi[3], bj[3]) - max(bi[1], bj[1])
+            if vo < 0.5 * min(bi[3] - bi[1], bj[3] - bj[1]):
+                continue  # different rows
+            if abs(quad_metrics(out[i])["angle"]) > 20 or abs(quad_metrics(out[j])["angle"]) > 20:
+                continue
+            mid = (bi[2] + bj[0]) / 2
+            if mid <= bi[0] + 1 or mid >= bj[2] - 1:
+                continue  # one box contains the other: leave it
+            for k in (1, 2):  # right edge of the left box
+                out[i][k][0] = min(out[i][k][0], mid)
+            for k in (0, 3):  # left edge of the right box
+                out[j][k][0] = max(out[j][k][0], mid)
+            boxes[i][2] = min(bi[2], mid)
+            boxes[j][0] = max(bj[0], mid)
+    return out
+
+
 def place_items(page: pymupdf.Page, items: list[LayerItem]) -> list[dict]:
     """Write invisible text for each item. Returns placement info for verification."""
     font = layer_font()
     span = font.ascender - font.descender  # in units of font size
     derot = page.derotation_matrix if page.rotation else None
     placed = []
-    for it in items:
+    valid = [it for it in items if _clean(it.text) and it.quad]
+    trimmed = _resolve_overlaps([it.quad for it in valid])
+    for it, tq in zip(valid, trimmed):
         text = _clean(it.text)
-        if not text or not it.quad:
-            continue
-        pts = [pymupdf.Point(x, y) for x, y in it.quad]
+        pts = [pymupdf.Point(x, y) for x, y in tq]
         if derot is not None:
             pts = [p * derot for p in pts]
         q = [[p.x, p.y] for p in pts]
         m = quad_metrics(q)
         if m["height"] < 1 or m["length"] < 1:
             continue
-        fs = max(1.0, m["height"] / span)
+        fs = max(1.0, HEIGHT_FILL * m["height"] / span)
         ang = math.radians(m["angle"])
         ux, uy = math.cos(ang), math.sin(ang)  # baseline direction
         nx, ny = uy, -ux  # "up" normal in a y-down space
-        bl = pts[3]
-        origin = pymupdf.Point(bl.x + nx * (-font.descender) * fs, bl.y + ny * (-font.descender) * fs)
+        # left-edge midpoint of the box; centre the text run's em box on it
+        lm = pymupdf.Point((pts[0].x + pts[3].x) / 2, (pts[0].y + pts[3].y) / 2)
+        c = (font.ascender + font.descender) / 2 * fs
+        origin = pymupdf.Point(lm.x - nx * c, lm.y - ny * c)
         natural = font.text_length(text, fontsize=fs)
         if natural <= 0:
             continue

@@ -26,7 +26,7 @@ def _resp(status: int):
 
 
 def ok_response(stop="end_turn"):
-    parsed = ClaudePageOutput(regions=[ClaudeRegion(id="r1", text="안녕하세요", uncertain=False, uncertain_parts=[],
+    parsed = ClaudePageOutput(page_rotation=0, regions=[ClaudeRegion(id="r1", text="안녕하세요", uncertain=False, uncertain_parts=[],
                                                     block=1, block_type="paragraph")], unboxed=[], notes="")
     usage = SimpleNamespace(input_tokens=5000, output_tokens=400, cache_read_input_tokens=0,
                             cache_creation_input_tokens=0, output_tokens_details=SimpleNamespace(thinking_tokens=120))
