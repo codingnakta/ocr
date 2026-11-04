@@ -6,11 +6,11 @@
 # python
 __pycache__/
 *.pyc
-.venv/
+.venv
 .pytest_cache/
 backend/data/
 backend/models_data/
-backend/tests/assets/fonts/
+backend/tests/assets/fonts
 backend/tests/assets/_cjk_printed.ttf
 backend/tests/assets/real/*
 !backend/tests/assets/real/README.md
@@ -29,3 +29,7 @@ next-env.d.ts
 .DS_Store
 *.log
 frontend/e2e/fixtures/
+
+# desktop build outputs
+backend/dist/
+backend/build/

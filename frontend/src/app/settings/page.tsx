@@ -2,7 +2,8 @@
 import { useEffect, useState } from "react";
 import { Info, Loader2, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Badge, Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/primitives";
+import { toast } from "sonner";
+import { Badge, Card, CardContent, CardDescription, CardHeader, CardTitle, Input } from "@/components/ui/primitives";
 import { apiGet, apiSend } from "@/lib/api";
 import { formatTokens, formatUsd } from "@/lib/utils";
 import type { SettingsInfo } from "@/types/api";
@@ -60,6 +61,8 @@ export default function SettingsPage() {
           </Button>
         )}
       </div>
+
+      {s.desktop_mode && <ApiKeyCard s={s} onSaved={() => apiGet<SettingsInfo>("/api/settings").then(setS)} />}
 
       <div className="grid gap-4 md:grid-cols-2">
         <Card>
@@ -173,6 +176,72 @@ export default function SettingsPage() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+function ApiKeyCard({ s, onSaved }: { s: SettingsInfo; onSaved: () => void }) {
+  const [key, setKey] = useState("");
+  const [busy, setBusy] = useState(false);
+  const save = async () => {
+    setBusy(true);
+    try {
+      const r = await apiSend<{ warning: string | null }>("POST", "/api/settings/api-key", { api_key: key.trim() });
+      setKey("");
+      toast.success("API 키를 저장했습니다.");
+      if (r.warning) toast.warning(r.warning);
+      onSaved();
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const remove = async () => {
+    if (!confirm("저장된 API 키를 이 컴퓨터에서 지울까요?")) return;
+    await apiSend("DELETE", "/api/settings/api-key").catch((e) => toast.error(e.message));
+    onSaved();
+  };
+  return (
+    <Card data-testid="api-key-card">
+      <CardHeader>
+        <CardTitle>Claude API 키</CardTitle>
+        <CardDescription>
+          이 컴퓨터에만 저장됩니다(다른 곳으로 전송되지 않음). 키는{" "}
+          <a href="https://platform.claude.com" target="_blank" rel="noreferrer" className="text-primary underline">
+            platform.claude.com
+          </a>{" "}
+          → API Keys에서 만들 수 있습니다.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <p className="text-sm">
+          현재:{" "}
+          {s.claude.configured ? (
+            <Badge variant="success">설정됨 {s.claude.key_hint}</Badge>
+          ) : (
+            <Badge variant="warning">없음</Badge>
+          )}
+        </p>
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <Input
+            type="password"
+            placeholder="sk-ant-..."
+            value={key}
+            onChange={(e) => setKey(e.target.value)}
+            autoComplete="off"
+            data-testid="api-key-input"
+          />
+          <Button onClick={save} disabled={busy || key.trim().length < 20} data-testid="api-key-save">
+            {busy ? <Loader2 className="animate-spin" /> : null} 저장
+          </Button>
+          {s.claude.configured && (
+            <Button variant="ghost" onClick={remove}>
+              지우기
+            </Button>
+          )}
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 

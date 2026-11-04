@@ -1,0 +1,110 @@
+# Builds the Windows desktop app (installer + portable zip), tests the built exe,
+# and publishes it as a GitHub Release (free for public repositories).
+name: Build Windows app
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, pilgibot-ocr-studio]
+
+concurrency:
+  group: build-windows-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Build frontend (static export)
+        working-directory: frontend
+        shell: bash
+        run: |
+          npm ci --no-audit --no-fund
+          STATIC_EXPORT=1 npm run build
+          test -f out/index.html
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install Python dependencies
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller==6.22.3
+
+      - name: Download OCR models (Korean recognizer + detector/orientation)
+        working-directory: backend
+        shell: bash
+        run: |
+          python scripts/fetch_assets.py models
+          find models_data -type f -name "*.onnx" -exec ls -la {} \;
+
+      - name: Build exe (PyInstaller)
+        working-directory: backend
+        run: pyinstaller pilgibot.spec --noconfirm
+
+      - name: Smoke test the built exe (upload -> local OCR -> searchable PDF)
+        working-directory: backend
+        shell: pwsh
+        run: |
+          $env:PILGIBOT_NO_BROWSER = "1"
+          $env:PILGIBOT_DATA_DIR = "$env:RUNNER_TEMP\pilgibot-data"
+          $p = Start-Process -FilePath "dist\Pilgibot\Pilgibot.exe" -PassThru `
+                 -RedirectStandardOutput "$env:RUNNER_TEMP\app.out" -RedirectStandardError "$env:RUNNER_TEMP\app.err"
+          try {
+            python packaging/smoke_test.py http://127.0.0.1:8765 ..\test.jpg --mode local
+            if ($LASTEXITCODE -ne 0) { throw "smoke test failed" }
+          } finally {
+            Get-Content "$env:RUNNER_TEMP\app.out" -Tail 30 -ErrorAction SilentlyContinue
+            Get-Content "$env:RUNNER_TEMP\app.err" -Tail 30 -ErrorAction SilentlyContinue
+            Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+          }
+
+      - name: Portable zip
+        working-directory: backend
+        shell: pwsh
+        run: Compress-Archive -Path dist\Pilgibot -DestinationPath dist\Pilgibot-Windows-portable.zip -CompressionLevel Optimal
+
+      - name: Installer (Inno Setup)
+        working-directory: backend/packaging
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup --no-progress -y | Out-Null }
+          & $iscc installer.iss "/DAppVersion=1.0.${{ github.run_number }}"
+          if ($LASTEXITCODE -ne 0) { throw "iscc failed" }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Pilgibot-Windows
+          path: |
+            backend/dist/Pilgibot-Setup.exe
+            backend/dist/Pilgibot-Windows-portable.zip
+          retention-days: 14
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: desktop-v1.0.${{ github.run_number }}
+          name: 필기봇 OCR Studio for Windows 1.0.${{ github.run_number }}
+          target_commitish: ${{ github.sha }}
+          make_latest: true
+          body: |
+            **설치:** `Pilgibot-Setup.exe`를 받아 실행하세요 (관리자 권한 불필요).
+            **설치 없이:** `Pilgibot-Windows-portable.zip`을 풀고 `Pilgibot.exe`를 실행하세요.
+            Windows가 "PC 보호" 경고를 띄우면 **추가 정보 → 실행**을 누르세요 (서명되지 않은 프로그램).
+            자세한 안내: docs/windows.md
+          files: |
+            backend/dist/Pilgibot-Setup.exe
+            backend/dist/Pilgibot-Windows-portable.zip

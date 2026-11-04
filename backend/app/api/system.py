@@ -13,6 +13,8 @@ from app.core.config import get_settings
 from app.core.db import get_db
 from app.core.security import COOKIE, current_user, limiter, make_session, verify_password
 from app.models import ApiCall, User, utcnow
+from pydantic import BaseModel, Field
+
 from app.schemas.api import LoginIn
 from app.services import cost as cost_svc
 
@@ -68,10 +70,13 @@ def settings_info(user: User = Depends(current_user)):
         local = local_info()
     except Exception as e:  # model files missing etc.
         local = {"available": False, "note": f"로컬 OCR 초기화 실패: {type(e).__name__}"}
+    key = s.anthropic_api_key.get_secret_value() if s.claude_configured else ""  # type: ignore[union-attr]
     return {
-        "app_env": s.app_env, "auth_mode": s.auth_mode,
+        "app_env": s.app_env, "auth_mode": s.auth_mode, "desktop_mode": s.desktop_mode,
         "claude": {
-            "configured": s.claude_configured, "model": s.claude_model, "effort": s.claude_effort,
+            "configured": s.claude_configured,
+            # desktop app only: last 4 characters so the user can tell which key is in use
+            "key_hint": f"…{key[-4:]}" if (s.desktop_mode and key) else None, "model": s.claude_model, "effort": s.claude_effort,
             "fallbacks": s.claude_fallbacks or None,
             "pricing": {"input": price.input, "output": price.output, "cache_read": price.cache_read} if price else None,
             "pricing_known": known, "pricing_checked": cost_svc.PRICING_CHECKED,
@@ -90,6 +95,81 @@ def settings_info(user: User = Depends(current_user)):
             "Claude 구독(Pro/Max) 사용 한도와 API 크레딧은 별개입니다. 이 앱은 API 키의 조직 과금을 사용합니다.",
         ],
     }
+
+
+class ApiKeyIn(BaseModel):
+    api_key: str = Field(min_length=20, max_length=300)
+
+
+def _desktop_local_only(request: Request) -> None:
+    s = get_settings()
+    if not s.desktop_mode or not s.pilgibot_config_file:
+        raise HTTPException(403, "API 키는 서버 환경변수로 설정합니다 (데스크톱 앱에서만 화면에서 설정 가능).")
+    host = request.client.host if request.client else ""
+    if host not in ("127.0.0.1", "::1", "localhost"):
+        raise HTTPException(403, "이 컴퓨터에서만 API 키를 바꿀 수 있습니다.")
+
+
+def _apply_api_key(value: str | None) -> None:
+    import json
+    import os
+
+    from app.ocr import claude_engine
+
+    s = get_settings()
+    cfg_path = s.pilgibot_config_file
+    data = {}
+    if cfg_path.exists():
+        try:
+            data = json.loads(cfg_path.read_text(encoding="utf-8"))
+        except ValueError:
+            data = {}
+    if value:
+        data["anthropic_api_key"] = value
+        os.environ["ANTHROPIC_API_KEY"] = value
+    else:
+        data.pop("anthropic_api_key", None)
+        os.environ.pop("ANTHROPIC_API_KEY", None)
+    cfg_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = cfg_path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    try:
+        os.chmod(tmp, 0o600)
+    except OSError:
+        pass
+    os.replace(tmp, cfg_path)
+    get_settings.cache_clear()
+    claude_engine._engines.clear()
+
+
+@router.post("/settings/api-key")
+def set_api_key(body: ApiKeyIn, request: Request, user: User = Depends(current_user)):
+    """Desktop app: save the Anthropic API key on this computer (after checking it)."""
+    import anthropic
+
+    _desktop_local_only(request)
+    key = body.api_key.strip()
+    if not key.startswith("sk-ant-"):
+        raise HTTPException(400, "Anthropic API 키는 'sk-ant-'로 시작합니다.")
+    warning = None
+    try:
+        anthropic.Anthropic(api_key=key, base_url=get_settings().anthropic_api_url, max_retries=0,
+                            timeout=20).models.retrieve(get_settings().claude_model)
+    except anthropic.AuthenticationError as e:
+        raise HTTPException(400, "API 키가 올바르지 않습니다 (Anthropic 인증 실패).") from e
+    except anthropic.PermissionDeniedError as e:
+        raise HTTPException(400, "이 API 키로는 모델을 사용할 권한이 없습니다.") from e
+    except Exception:
+        warning = "인터넷 연결 문제로 키를 확인하지 못했지만 저장했습니다."
+    _apply_api_key(key)
+    return {"ok": True, "warning": warning, "key_hint": f"…{key[-4:]}"}
+
+
+@router.delete("/settings/api-key")
+def delete_api_key(request: Request, user: User = Depends(current_user)):
+    _desktop_local_only(request)
+    _apply_api_key(None)
+    return {"ok": True}
 
 
 @router.get("/usage")

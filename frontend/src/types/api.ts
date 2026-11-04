@@ -149,8 +149,10 @@ export interface Estimate {
 export interface SettingsInfo {
   app_env: string;
   auth_mode: "none" | "password";
+  desktop_mode?: boolean;
   claude: {
     configured: boolean;
+    key_hint?: string | null;
     model: string;
     effort: string;
     fallbacks: string | null;

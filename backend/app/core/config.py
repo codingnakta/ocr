@@ -112,6 +112,14 @@ class Settings(BaseSettings):
 
     cors_origins: list[str] = Field(default_factory=list)
 
+    # ---- desktop app (Windows exe) -------------------------------------------
+    # Serve the statically exported frontend (frontend/out) from this server.
+    frontend_dir: Path | None = None
+    # Desktop mode: single local user, API key entered in the UI and stored in
+    # PILGIBOT_CONFIG_FILE (only requests from this computer may change it).
+    desktop_mode: bool = False
+    pilgibot_config_file: Path | None = None
+
     @field_validator("cors_origins", mode="before")
     @classmethod
     def _split_origins(cls, v):

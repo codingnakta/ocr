@@ -26,7 +26,7 @@ export default function HomePage() {
       const res = await upload(sorted, { title: title.trim() || undefined, maxFileMb: settings?.limits.max_file_mb });
       if (res.rejected) toast.warning(`지원하지 않는 형식 ${res.rejected}개는 제외했습니다.`);
       if (res.failed) toast.error(`${res.failed}개 파일을 올리지 못했습니다. 문서 화면에서 다시 추가할 수 있습니다.`);
-      router.push(`/documents/${res.documentId}`);
+      router.push(`/doc/?id=${res.documentId}`);
     } catch (e) {
       toast.error((e as Error).message);
     }
@@ -45,6 +45,12 @@ export default function HomePage() {
         </p>
       </div>
 
+      {settings && !settings.claude.configured && (
+        <div className="mb-4 rounded-lg border border-[oklch(0.85_0.08_80)] bg-warning-soft p-3 text-sm" data-testid="key-banner">
+          Claude API 키가 아직 없습니다. AI·하이브리드 OCR을 쓰려면{" "}
+          <a href="/settings/" className="font-medium text-primary underline">설정</a>에서 키를 입력하세요. (무료 OCR은 키 없이 사용 가능)
+        </div>
+      )}
       <div className="mb-3">
         <Input
           placeholder="문서 제목 (선택) — 예: 디지털논리 3주차 필기"

@@ -23,7 +23,7 @@ test("mobile: upload, OCR and tabbed review", async ({ page }) => {
   await shot("01-home");
 
   await page.getByTestId("file-input").setInputFiles(files.map((f) => path.join(FIX, f)));
-  await page.waitForURL(/\/documents\//, { timeout: 120_000 });
+  await page.waitForURL(/\/doc\/\?id=/, { timeout: 120_000 });
   await expect(page.getByTestId("page-card")).toHaveCount(files.length);
   await shot("02-pages");
 

@@ -1,6 +1,6 @@
 "use client";
-import { useEffect, useState } from "react";
-import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { Download, FileCheck2, LayoutGrid, Loader2, Pencil, ScanText, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -17,10 +17,18 @@ import type { PageInfo, SettingsInfo } from "@/types/api";
 
 const TABS = ["pages", "ocr", "review", "export"] as const;
 
-export default function DocumentPage() {
-  const { id } = useParams<{ id: string }>();
+export default function DocumentPageRoute() {
+  return (
+    <Suspense>
+      <DocumentPage />
+    </Suspense>
+  );
+}
+
+function DocumentPage() {
   const router = useRouter();
   const search = useSearchParams();
+  const id = search.get("id") ?? "";
   const { doc, reload, error } = useDocument(id);
   const [settings, setSettings] = useState<SettingsInfo | null>(null);
   const [tab, setTab] = useState<string>(search.get("tab") ?? "pages");

@@ -1,19 +1,29 @@
 "use client";
+import { Suspense } from "react";
 import Link from "next/link";
-import { useParams, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { ArrowLeft, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PdfPreview } from "@/components/viewer/pdf-preview";
 
-export default function PreviewPage() {
-  const { id } = useParams<{ id: string }>();
-  const exportId = useSearchParams().get("export");
+export default function PreviewPageRoute() {
+  return (
+    <Suspense>
+      <PreviewPage />
+    </Suspense>
+  );
+}
+
+function PreviewPage() {
+  const search = useSearchParams();
+  const id = search.get("id") ?? "";
+  const exportId = search.get("export");
   const url = exportId ? `/api/exports/${exportId}/download` : `/api/documents/${id}/download?format=pdf`;
   return (
     <div className="mx-auto max-w-5xl px-4 py-5">
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <Button variant="ghost" size="sm" asChild>
-          <Link href={`/documents/${id}?tab=export`}>
+          <Link href={`/doc/?id=${id}&tab=export`}>
             <ArrowLeft /> 문서로
           </Link>
         </Button>

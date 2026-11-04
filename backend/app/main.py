@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.api import documents, jobs, system
 from app.core.config import get_settings
@@ -74,6 +76,9 @@ def create_app() -> FastAPI:
     app.include_router(system.router)
     app.include_router(documents.router)
     app.include_router(jobs.router)
+    if s.frontend_dir and Path(s.frontend_dir).is_dir():
+        # Desktop build: the exported Next.js app is served by this same server.
+        app.mount("/", StaticFiles(directory=str(s.frontend_dir), html=True), name="frontend")
     return app
 
 

@@ -132,7 +132,7 @@ function ExportRow({ e, docId }: { e: ExportInfo; docId: string }) {
         <div className="ml-auto flex gap-1">
           {e.status === "done" && e.format === "pdf" && (
             <Button size="sm" variant="outline" asChild>
-              <Link href={`/documents/${docId}/preview?export=${e.id}`}>
+              <Link href={`/doc/preview/?id=${docId}&export=${e.id}`}>
                 <Eye /> 미리보기
               </Link>
             </Button>

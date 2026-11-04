@@ -31,8 +31,8 @@ test("upload → OCR → edit → searchable PDF → select & search in PDF.js",
   await shot(page, "01-home");
   await page.getByPlaceholder(/문서 제목/).fill("E2E 테스트 필기");
   await page.getByTestId("file-input").setInputFiles(files.map((f) => path.join(FIX, f)));
-  await page.waitForURL(/\/documents\/[0-9a-f]+/, { timeout: 120_000 });
-  const docId = page.url().match(/documents\/([0-9a-f]+)/)![1];
+  await page.waitForURL(/\/doc\/\?id=[0-9a-f]+/, { timeout: 120_000 });
+  const docId = page.url().match(/id=([0-9a-f]+)/)![1];
   await expect(page.getByTestId("page-card")).toHaveCount(files.length);
   await shot(page, "02-pages");
 

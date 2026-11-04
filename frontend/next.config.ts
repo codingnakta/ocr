@@ -5,7 +5,13 @@ import type { NextConfig } from "next";
 // cookies stay first-party. BACKEND_URL is a server-side variable (no NEXT_PUBLIC_).
 const backend = process.env.BACKEND_URL ?? "http://127.0.0.1:8000";
 
-const nextConfig: NextConfig = {
+// STATIC_EXPORT=1 builds plain HTML/JS files (frontend/out) that the FastAPI server
+// serves itself — used by the Windows desktop app (one program, no Node.js needed).
+const staticExport = process.env.STATIC_EXPORT === "1";
+
+const nextConfig: NextConfig = staticExport
+  ? { output: "export", trailingSlash: true, poweredByHeader: false, images: { unoptimized: true } }
+  : {
   output: "standalone",
   poweredByHeader: false,
   async rewrites() {
@@ -24,6 +30,6 @@ const nextConfig: NextConfig = {
       { source: "/sw.js", headers: [{ key: "Cache-Control", value: "no-cache" }] },
     ];
   },
-};
+  };
 
 export default nextConfig;

@@ -29,7 +29,7 @@ export default function HistoryPage() {
       ) : (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {docs.map((d) => (
-            <Link key={d.id} href={`/documents/${d.id}`}>
+            <Link key={d.id} href={`/doc/?id=${d.id}`}>
               <Card className="flex gap-3 p-3 transition-colors hover:border-primary/50">
                 <div className="flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-md bg-muted">
                   {d.thumb_url ? (
