@@ -1,0 +1,7 @@
+-r requirements.txt
+pytest==9.2.0
+httpx==0.28.1
+pypdf==6.21.4
+pdfminer.six==20260107
+fonttools==4.68.0
+brotli==1.2.1
