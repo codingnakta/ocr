@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { FlaskConical, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Badge, Card, CardContent, CardDescription, CardHeader, CardTitle, Label, Switch, Textarea } from "@/components/ui/primitives";
+import { Badge, Card, CardContent, CardDescription, CardHeader, CardTitle, Input, Label, Switch, Textarea } from "@/components/ui/primitives";
 import { apiGet, apiUpload } from "@/lib/api";
 import type { SettingsInfo } from "@/types/api";
 import { formatUsd } from "@/lib/utils";
@@ -24,10 +24,20 @@ interface EvalResult {
   error?: string;
 }
 
+interface EvalResponse {
+  ground_truth_provided: boolean;
+  note: string | null;
+  results: EvalResult[];
+  source?: { kind: "image" | "pdf"; page: number; pages: number };
+}
+
+const isPdf = (f: File) => f.type === "application/pdf" || /\.pdf$/i.test(f.name);
+
 const NAMES: Record<string, string> = { local: "로컬 (RapidOCR)", ai: "AI (Claude)", hybrid: "하이브리드" };
 
 export default function EvaluatePage() {
   const [file, setFile] = useState<File | null>(null);
+  const [page, setPage] = useState(1);
   const [gt, setGt] = useState("");
   const [engines, setEngines] = useState<Record<string, boolean>>({ local: true, ai: false, hybrid: true });
   const [choices, setChoices] = useState<{ id: string; name: string; per_page_usd: number }[]>([]);
@@ -41,7 +51,7 @@ export default function EvaluatePage() {
       .catch(() => undefined);
   }, []);
   const [busy, setBusy] = useState(false);
-  const [res, setRes] = useState<{ ground_truth_provided: boolean; note: string | null; results: EvalResult[] } | null>(null);
+  const [res, setRes] = useState<EvalResponse | null>(null);
 
   const run = async () => {
     if (!file) return;
@@ -52,6 +62,7 @@ export default function EvaluatePage() {
     fd.append("ground_truth", gt);
     fd.append("engines", Object.keys(engines).filter((k) => engines[k]).join(","));
     fd.append("models", Object.keys(models).filter((k) => models[k]).join(","));
+    if (isPdf(file)) fd.append("page", String(page));
     try {
       setRes(await apiUpload("/api/evaluations", fd));
     } catch (e) {
@@ -66,17 +77,40 @@ export default function EvaluatePage() {
       <div>
         <h1 className="text-xl font-semibold">OCR 정확도 평가</h1>
         <p className="text-sm text-muted-foreground">
-          같은 이미지를 로컬·AI·하이브리드로 처리해 비교합니다. 정답 텍스트를 넣어야 CER/WER을 계산합니다 (정답 없이는 정확도를
-          표시하지 않습니다).
+          같은 이미지(또는 PDF의 한 쪽)를 로컬·AI·하이브리드로 처리해 비교합니다. 정답 텍스트를 넣어야 CER/WER을 계산합니다 (정답
+          없이는 정확도를 표시하지 않습니다).
         </p>
       </div>
       <Card>
         <CardContent className="grid gap-4 pt-5 md:grid-cols-2">
           <div className="space-y-3">
             <div>
-              <Label>이미지</Label>
-              <input type="file" accept="image/jpeg,image/png,image/webp" className="mt-1 block w-full text-sm" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+              <Label>이미지 또는 PDF</Label>
+              <input
+                type="file"
+                accept="image/jpeg,image/png,image/webp,application/pdf,.jpg,.jpeg,.png,.webp,.pdf"
+                className="mt-1 block w-full text-sm"
+                onChange={(e) => {
+                  setFile(e.target.files?.[0] ?? null);
+                  setPage(1);
+                }}
+              />
+              <p className="mt-1 text-xs text-muted-foreground">JPG · PNG · WEBP · PDF. PDF는 한 번에 한 쪽만 평가합니다.</p>
             </div>
+            {file && isPdf(file) && (
+              <div>
+                <Label htmlFor="eval-page">평가할 PDF 쪽 번호</Label>
+                <Input
+                  id="eval-page"
+                  type="number"
+                  min={1}
+                  step={1}
+                  value={page}
+                  onChange={(e) => setPage(Math.max(1, Math.floor(Number(e.target.value) || 1)))}
+                  className="mt-1 w-32"
+                />
+              </div>
+            )}
             <div className="flex flex-wrap gap-4">
               {Object.keys(NAMES).map((k) => (
                 <label key={k} className="flex items-center gap-2 text-sm">
@@ -110,6 +144,11 @@ export default function EvaluatePage() {
       </Card>
       {res && (
         <>
+          {res.source?.kind === "pdf" && (
+            <p className="text-sm text-muted-foreground">
+              PDF {res.source.pages}쪽 중 {res.source.page}쪽을 평가했습니다.
+            </p>
+          )}
           {res.note && <p className="rounded-lg bg-warning-soft p-3 text-sm">{res.note}</p>}
           <div className="grid gap-4 lg:grid-cols-3">
             {res.results.map((r) => (

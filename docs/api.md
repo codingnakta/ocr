@@ -63,4 +63,4 @@
 | GET | `/api/auth/me` | 로그인 상태 |
 | GET | `/api/settings` | 모델, effort, 단가, 로컬 OCR 모델 정보, 업로드 제한, 데이터 전송 안내. API 키는 포함하지 않습니다 |
 | GET | `/api/usage?days=30` | 모델별·일별 비용, 최근 호출(상태, 토큰, 재시도, 오류), 오늘 사용액과 하루 상한 |
-| POST | `/api/evaluations` | multipart `image`, `ground_truth?`, `engines=local,ai,hybrid` → 엔진별 결과, 시간, 비용, PDF 검증. 정답 텍스트가 있을 때만 CER/WER을 계산합니다 |
+| POST | `/api/evaluations` | multipart `image`(JPG/PNG/WEBP 또는 PDF), `ground_truth?`, `engines=local,ai,hybrid`, `page?`(PDF일 때 평가할 쪽 번호, 기본 1) → 엔진별 결과, 시간, 비용, PDF 검증, `source`(평가한 쪽/전체 쪽수). 정답 텍스트가 있을 때만 CER/WER을 계산합니다 |

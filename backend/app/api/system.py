@@ -241,18 +241,33 @@ def usage(days: int = 30, db: Session = Depends(get_db), user: User = Depends(cu
 @router.post("/evaluations")
 async def evaluate(image: UploadFile = File(...), ground_truth: str = Form(default=""),
                    engines: str = Form(default="local,ai,hybrid"), models: str = Form(default=""),
-                   user: User = Depends(current_user)):
-    """Run several engines on one image and compare. CER/WER only with ground truth."""
+                   page: int = Form(default=1), user: User = Depends(current_user)):
+    """Run several engines on one image and compare. CER/WER only with ground truth.
+
+    A PDF is accepted too: the given page (1-based, default 1) is rendered and evaluated
+    like an image. The evaluation always works on exactly one page.
+    """
     from starlette.concurrency import run_in_threadpool
 
-    from app.evaluation.runner import evaluate_image
+    from app.evaluation.runner import PdfPageError, evaluate_image, pdf_page_image
     from app.services.ingest import sniff_mime
 
     s = get_settings()
     limiter.hit(f"eval:{user.id}", 20, 3600)
     data = await image.read(s.max_file_bytes + 1)
-    if len(data) > s.max_file_bytes or sniff_mime(data[:2048]) not in ("image/jpeg", "image/png", "image/webp"):
-        raise HTTPException(400, "JPG/PNG/WEBP 이미지만 평가할 수 있습니다.")
+    if len(data) > s.max_file_bytes:
+        raise HTTPException(400, f"파일이 너무 큽니다 (최대 {s.max_file_mb}MB).")
+    mime = sniff_mime(data[:2048])
+    source = None
+    if mime == "application/pdf":
+        try:
+            data, page_count = await run_in_threadpool(pdf_page_image, data, page, s.pdf_render_dpi,
+                                                       s.max_pdf_pages_per_file)
+        except PdfPageError as e:
+            raise HTTPException(400, str(e)) from e
+        source = {"kind": "pdf", "page": page, "pages": page_count}
+    elif mime not in ("image/jpeg", "image/png", "image/webp"):
+        raise HTTPException(400, "JPG/PNG/WEBP 이미지 또는 PDF만 평가할 수 있습니다.")
     names = [e.strip() for e in engines.split(",") if e.strip() in ("local", "ai", "hybrid")]
     if not names:
         raise HTTPException(400, "engines: local, ai, hybrid 중 선택")
@@ -260,4 +275,6 @@ async def evaluate(image: UploadFile = File(...), ground_truth: str = Form(defau
         raise HTTPException(400, "Claude API 키가 없어 ai/hybrid 평가를 할 수 없습니다.")
     allowed = {m["id"] for m in cost_svc.MODEL_CHOICES} | {s.claude_model}
     model_list = [m.strip() for m in models.split(",") if m.strip() in allowed] or [s.claude_model]
-    return await run_in_threadpool(evaluate_image, data, ground_truth, names, user.id, model_list)
+    result = await run_in_threadpool(evaluate_image, data, ground_truth, names, user.id, model_list)
+    result["source"] = source or {"kind": "image", "page": 1, "pages": 1}
+    return result
