@@ -96,6 +96,10 @@ class Settings(BaseSettings):
     # ---- processing --------------------------------------------------------
     embedded_worker: bool = True  # run the queue worker inside the API process
     worker_concurrency: int = 2
+    # Single worker process (default compose): on start, every task left 'running' is an
+    # orphan of the previous run and is re-queued at once. With several worker
+    # processes set this to false: only locks older than TASK_LOCK_TIMEOUT_S are taken.
+    worker_recover_all: bool = True
     worker_poll_interval_s: float = 1.0
     task_max_attempts: int = 3
     task_lock_timeout_s: int = 900

@@ -28,6 +28,9 @@ from app.ocr.local_engine import LocalOcrEngine, filter_quads, get_local_engine,
 log = logging.getLogger(__name__)
 
 MODES = ("ai", "local", "hybrid")
+# Bump when preprocessing / detection / orientation / hybrid logic changes: it is part
+# of the OCR cache key, so results produced by older logic are not reused.
+PIPELINE_VERSION = "2026-11-04.3"
 ORIENT_MIN_P = 0.8  # minimum page-orientation model probability to act on
 
 

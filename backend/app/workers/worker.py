@@ -205,7 +205,7 @@ def main() -> None:
 
     install_redaction()
     init_db()
-    recover(stale_only=True)
+    recover(stale_only=not get_settings().worker_recover_all)
     w = Worker()
     w.start()
     log.info("worker started (%s threads)", w.concurrency)

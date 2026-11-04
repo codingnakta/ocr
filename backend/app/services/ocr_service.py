@@ -18,6 +18,7 @@ from app.imaging.io import page_display_image, pil_to_bgr
 from app.models import ApiCall, Job, OcrCache, OcrRegion, OcrRun, Page, utcnow
 from app.ocr.base import CostLimitExceeded, PageOcrResult
 from app.ocr.local_engine import get_local_engine
+from app.ocr.pipeline import PIPELINE_VERSION
 from app.ocr.prompts import PROMPT_VERSION
 from app.services.storage import doc_prefix, get_storage
 
@@ -106,7 +107,7 @@ def cache_key(page: Page, mode: str, steps: dict, model: str | None, effort: str
     parts = {
         "sha": page.source.sha256, "idx": page.source_page_index, "rot": page.user_rotation, "mode": mode,
         "steps": steps, "model": model if mode != "local" else None, "effort": effort if mode != "local" else None,
-        "prompt": PROMPT_VERSION, "det": local.det_model if local else None, "rec": local.rec_model if local else None,
+        "prompt": PROMPT_VERSION, "pipeline": PIPELINE_VERSION, "det": local.det_model if local else None, "rec": local.rec_model if local else None,
         "dpi": get_settings().pdf_render_dpi if page.source.kind == "pdf" else None,
     }
     return hashlib.sha256(json.dumps(parts, sort_keys=True).encode()).hexdigest()
