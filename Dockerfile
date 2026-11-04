@@ -9,6 +9,10 @@
 ARG NODE_IMAGE=node:22-bookworm-slim
 ARG PYTHON_IMAGE=python:3.13-slim
 
+# Also used by the Hugging Face Space workflow (.github/workflows/deploy-hf-space.yml).
+# Hugging Face runs the container as an unprivileged user (uid 1000) without a
+# persistent disk, so every directory written at runtime is world-writable here.
+
 # ---------- frontend build ----------
 FROM ${NODE_IMAGE} AS web-build
 WORKDIR /web
@@ -44,10 +48,20 @@ COPY --from=web-build /web/.next/standalone /app/web
 COPY --from=web-build /web/.next/static /app/web/.next/static
 COPY --from=web-build /web/public /app/web/public
 COPY deploy/start.sh /app/start.sh
-RUN chmod +x /app/start.sh
+RUN chmod +x /app/start.sh \
+    && mkdir -p /data /app/backend/models_data /app/web/.next/cache \
+    && chmod -R a+rwX /data /app/backend/models_data /app/web/.next
 
-# Defaults for the single-container deployment (override in the Render dashboard)
-ENV DATABASE_URL=sqlite:////data/pilgibot.db \
+# Defaults for an internet deployment: login required, cost caps on. Only
+# ANTHROPIC_API_KEY and ADMIN_PASSWORD must be provided (Render / Hugging Face secrets).
+ENV APP_ENV=production \
+    AUTH_MODE=password \
+    ADMIN_USERNAME=admin \
+    COOKIE_SECURE=true \
+    DAILY_COST_LIMIT_USD=10 \
+    DEFAULT_JOB_COST_LIMIT_USD=5 \
+    RETENTION_DAYS=14 \
+    DATABASE_URL=sqlite:////data/pilgibot.db \
     STORAGE_DIR=/data/files \
     WORK_DIR=/data/work \
     LOCAL_OCR_MODEL_DIR=/app/backend/models_data \

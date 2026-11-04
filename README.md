@@ -9,9 +9,13 @@
 
 ## 빠른 시작
 
-### 인터넷에 배포 (Render)
+### 인터넷에 무료 배포 (Hugging Face Spaces, 결제 수단 불필요)
 
-저장소의 `render.yaml`로 클릭 몇 번에 배포합니다. 순서는 [docs/render.md](docs/render.md)를 보세요.
+순서는 [docs/huggingface.md](docs/huggingface.md)를 보세요. 저장 공간이 임시라 결과 PDF는 바로 내려받아야 합니다.
+
+### 유료 배포 (Render, 데이터 유지)
+
+저장소의 `render.yaml`로 배포합니다. 순서는 [docs/render.md](docs/render.md)를 보세요.
 
 ### A. Docker (권장)
 
@@ -96,7 +100,8 @@ Claude는 정확한 글자 좌표를 보장하지 않으므로 **좌표는 항�
 
 - [docs/architecture.md](docs/architecture.md) — 구조, OCR 파이프라인, PDF 텍스트 레이어, 작업 큐, 기술 선택 이유
 - [docs/api.md](docs/api.md) — REST API
-- [docs/render.md](docs/render.md) — Render 배포 단계별 안내
+- [docs/huggingface.md](docs/huggingface.md) — Hugging Face Spaces 무료 배포 안내
+- [docs/render.md](docs/render.md) — Render 배포 단계별 안내 (유료)
 - [docs/deployment.md](docs/deployment.md) — 배포, 로그인, 보안, 환경변수
 - [docs/testing.md](docs/testing.md) — 자동/수동 테스트, 뷰어 체크리스트, 정확도 평가 도구
 

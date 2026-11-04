@@ -1,0 +1,75 @@
+# Deploys this repository to a Hugging Face Space (Docker SDK, free CPU hardware).
+# Setup (once): see docs/huggingface.md
+#   GitHub repo > Settings > Secrets and variables > Actions
+#     Secret   HF_TOKEN  = Hugging Face access token with "Write" permission
+#     Variable HF_SPACE  = <hf-username>/<space-name>, e.g. codingnakta/pilgibot
+name: Deploy to Hugging Face Space
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, pilgibot-ocr-studio]
+
+concurrency:
+  group: hf-space-deploy
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      HF_TOKEN: ${{ secrets.HF_TOKEN }}
+      HF_SPACE: ${{ vars.HF_SPACE }}
+    steps:
+      - name: Check settings
+        run: |
+          if [ -z "$HF_TOKEN" ] || [ -z "$HF_SPACE" ]; then
+            echo "::error::HF_TOKEN (secret) and HF_SPACE (variable) must be set: see docs/huggingface.md"
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+
+      - name: Assemble the Space repository
+        run: |
+          set -euo pipefail
+          SPACE_DIR="$RUNNER_TEMP/space"
+          mkdir -p "$SPACE_DIR"
+          rsync -a --exclude .git --exclude .github --exclude test.jpg ./ "$SPACE_DIR/"
+          cd "$SPACE_DIR"
+          # Space configuration lives in the README front matter
+          {
+            echo "---"
+            echo "title: Pilgibot OCR Studio"
+            echo "emoji: 📝"
+            echo "colorFrom: blue"
+            echo "colorTo: indigo"
+            echo "sdk: docker"
+            echo "app_port: 10000"
+            echo "pinned: false"
+            echo "---"
+            echo
+            cat README.md
+          } > README.space.md
+          mv README.space.md README.md
+          git init -q -b main
+          git lfs install --local
+          # Hugging Face only accepts binary files through LFS
+          git lfs track "*.png" "*.jpg" "*.jpeg" "*.webp" "*.ico" "*.gif" "*.pdf" "*.woff" "*.woff2" "*.ttf" "*.onnx" >/dev/null
+          git add .gitattributes
+          git add -A
+          git -c user.name="github-actions" -c user.email="actions@users.noreply.github.com" \
+            commit -q -m "Deploy ${GITHUB_SHA::7} from ${GITHUB_REPOSITORY}@${GITHUB_REF_NAME}"
+
+      - name: Push to Hugging Face
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/space"
+          HF_USER="${HF_SPACE%%/*}"
+          git push --force "https://${HF_USER}:${HF_TOKEN}@huggingface.co/spaces/${HF_SPACE}" main 2>&1 \
+            | sed "s/${HF_TOKEN}/***/g"
+          echo "Pushed. The Space now builds the Docker image (10-20 min):"
+          echo "  https://huggingface.co/spaces/${HF_SPACE}"

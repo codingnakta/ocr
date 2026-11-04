@@ -5,6 +5,21 @@ set -euo pipefail
 
 mkdir -p /data/files /data/work
 
+if [ "${AUTH_MODE:-}" = "password" ] && [ -z "${ADMIN_PASSWORD:-}" ] && [ -z "${ALLOW_NO_ADMIN:-}" ]; then
+  echo "ERROR: ADMIN_PASSWORD is not set. Add it as a secret (Render: Environment, Hugging Face: Settings > Variables and secrets)." >&2
+  exit 1
+fi
+# A session secret is required in production. If none is configured, generate one
+# for this run (users simply have to log in again after a restart).
+if [ -z "${SESSION_SECRET:-}" ]; then
+  SESSION_SECRET="$(python -c 'import secrets; print(secrets.token_hex(32))')"
+  export SESSION_SECRET
+  echo "SESSION_SECRET not set: generated a temporary one (sessions end on restart)." >&2
+fi
+if [ -z "${ANTHROPIC_API_KEY:-}" ]; then
+  echo "WARNING: ANTHROPIC_API_KEY is not set: only the free local OCR mode will work." >&2
+fi
+
 cd /app/backend
 uvicorn app.main:app --host 127.0.0.1 --port 8000 --workers 1 &
 api=$!
