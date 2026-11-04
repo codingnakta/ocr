@@ -1,0 +1,58 @@
+# Render Blueprint for 필기봇 OCR Studio (see docs/render.md)
+# One web service (Next.js + FastAPI + OCR worker in one container) and one
+# persistent disk for the SQLite database and uploaded files.
+services:
+  - type: web
+    name: pilgibot-ocr
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    # OCR needs ~2 GB RAM (large photos + ONNX models). Smaller instances run out of memory.
+    plan: standard
+    region: singapore
+    branch: pilgibot-ocr-studio
+    autoDeploy: true
+    healthCheckPath: /api/health
+    disk:
+      name: pilgibot-data
+      mountPath: /data
+      sizeGB: 5
+    envVars:
+      # --- secrets: Render asks for these when you create the Blueprint ---
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: SESSION_SECRET
+        generateValue: true
+      # --- login / security ---
+      - key: APP_ENV
+        value: production
+      - key: AUTH_MODE
+        value: password
+      - key: ADMIN_USERNAME
+        value: admin
+      - key: COOKIE_SECURE
+        value: "true"
+      - key: SESSION_MAX_AGE_HOURS
+        value: "168"
+      # --- Claude ---
+      - key: OCR_CLAUDE_MODEL
+        value: claude-opus-5-5
+      - key: OCR_CLAUDE_EFFORT
+        value: medium
+      - key: OCR_CLAUDE_FALLBACKS
+        value: default
+      # --- cost / limits ---
+      - key: DEFAULT_JOB_COST_LIMIT_USD
+        value: "5"
+      - key: DAILY_COST_LIMIT_USD
+        value: "10"
+      - key: MAX_FILE_MB
+        value: "40"
+      - key: MAX_PAGES_PER_DOCUMENT
+        value: "500"
+      - key: RETENTION_DAYS
+        value: "14"
+      - key: WORKER_CONCURRENCY
+        value: "2"
