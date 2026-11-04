@@ -78,7 +78,7 @@ function DocumentPage() {
   };
   const addFiles = async (files: File[]) => {
     const res = await uploader.upload(naturalSort(files), { documentId: doc.id, maxFileMb: settings?.limits.max_file_mb });
-    if (res.failed) toast.error(`${res.failed}개 파일을 올리지 못했습니다.`);
+    if (res.failed) toast.error(`${res.failed}개 파일을 올리지 못했습니다.`, { description: res.errors.join("\n"), duration: 15000 });
     uploader.reset();
     reload();
   };

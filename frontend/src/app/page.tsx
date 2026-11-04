@@ -25,7 +25,9 @@ export default function HomePage() {
     try {
       const res = await upload(sorted, { title: title.trim() || undefined, maxFileMb: settings?.limits.max_file_mb });
       if (res.rejected) toast.warning(`지원하지 않는 형식 ${res.rejected}개는 제외했습니다.`);
-      if (res.failed) toast.error(`${res.failed}개 파일을 올리지 못했습니다. 문서 화면에서 다시 추가할 수 있습니다.`);
+      if (res.failed) {
+        toast.error(`${res.failed}개 파일을 올리지 못했습니다.`, { description: res.errors.join("\n"), duration: 15000 });
+      }
       router.push(`/doc/?id=${res.documentId}`);
     } catch (e) {
       toast.error((e as Error).message);

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 import numpy as np
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import Response
@@ -21,6 +23,8 @@ from app.schemas.api import DocumentCreate, DocumentPatch, OcrPatch, PageOrder, 
 from app.services.ingest import UploadError, ingest_file
 from app.services.retention import delete_document_files
 from app.services.storage import doc_prefix, get_storage
+
+log = logging.getLogger("pilgibot.documents")
 
 router = APIRouter(prefix="/api/documents", tags=["documents"])
 
@@ -52,9 +56,11 @@ async def _ingest_uploads(db: Session, doc: Document, files: list[UploadFile]) -
         except UploadError as e:
             db.rollback()
             errors.append({"file": (f.filename or "")[:120], "error": str(e)})
-        except Exception:
+        except Exception as e:
             db.rollback()
-            errors.append({"file": (f.filename or "")[:120], "error": "파일 처리 중 오류가 발생했습니다."})
+            log.exception("ingest failed for %r", f.filename)
+            errors.append({"file": (f.filename or "")[:120],
+                           "error": f"파일 처리 중 오류가 발생했습니다 ({type(e).__name__}: {str(e)[:120]})."})
         finally:
             await f.close()
     doc.updated_at = utcnow()

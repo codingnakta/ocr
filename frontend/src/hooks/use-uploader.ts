@@ -100,7 +100,10 @@ export function useUploader() {
         if (ordered.length) {
           await apiSend("PUT", `/api/documents/${docId}/pages/order`, { page_ids: [...existingIds, ...ordered] });
         }
-        return { documentId: docId!, rejected, failed: itemsRef.current.filter((i) => i.status === "error").length };
+        const failedItems = itemsRef.current.filter((i) => i.status === "error");
+        // distinct reasons, with the file name so the user knows which one (e.g. 40MB limit, encrypted PDF)
+        const errors = [...new Set(failedItems.map((i) => `${i.file.name}: ${i.error ?? "알 수 없는 오류"}`))];
+        return { documentId: docId!, rejected, failed: failedItems.length, errors };
       } finally {
         setBusy(false);
       }

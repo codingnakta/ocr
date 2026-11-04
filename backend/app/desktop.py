@@ -63,6 +63,8 @@ def configure_environment() -> Path:
         "LOCAL_OCR_MODEL_DIR": str(base / "models_data"),
         "PILGIBOT_CONFIG_FILE": str(data / "config.json"),
         "RETENTION_DAYS": "0",
+        # local program, no network between browser and server: allow big scanned PDFs
+        "MAX_FILE_MB": "300",
     }
     for k, v in defaults.items():
         os.environ.setdefault(k, v)
