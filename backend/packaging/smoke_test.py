@@ -40,6 +40,10 @@ def multipart(path: Path) -> tuple[bytes, str]:
 
 
 def main() -> int:
+    try:  # CI consoles on Windows default to cp1252; recognized text is Korean
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[union-attr]
+    except Exception:
+        pass
     base, image = sys.argv[1].rstrip("/"), Path(sys.argv[2])
     mode = sys.argv[sys.argv.index("--mode") + 1] if "--mode" in sys.argv else "local"
     for _ in range(120):
