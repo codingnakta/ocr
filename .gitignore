@@ -1,0 +1,30 @@
+# secrets
+.env
+.env.*
+!.env.example
+
+# python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+backend/data/
+backend/models_data/
+backend/tests/assets/fonts/
+backend/tests/assets/_cjk_printed.ttf
+backend/tests/assets/real/*
+!backend/tests/assets/real/README.md
+
+# node
+node_modules/
+.next/
+out/
+frontend/test-results/
+frontend/playwright-report/
+e2e/test-results/
+*.tsbuildinfo
+next-env.d.ts
+
+# misc
+.DS_Store
+*.log
