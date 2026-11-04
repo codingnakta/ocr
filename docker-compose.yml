@@ -1,0 +1,68 @@
+# 필기봇 OCR Studio
+#   cp .env.example .env   # set ANTHROPIC_API_KEY (and production values if public)
+#   docker compose up -d --build
+#   open http://localhost:3000
+#
+# Only the frontend is published. The backend (and the API key) is reachable only
+# inside the compose network; the browser talks to Next.js, which proxies /api.
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: pilgibot
+      POSTGRES_USER: pilgibot
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-pilgibot-local-only}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pilgibot -d pilgibot"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://pilgibot:${POSTGRES_PASSWORD:-pilgibot-local-only}@db:5432/pilgibot
+      EMBEDDED_WORKER: "false"
+    volumes:
+      - files:/data
+    depends_on:
+      db:
+        condition: service_healthy
+
+  worker:
+    build: ./backend
+    restart: unless-stopped
+    command: ["python", "-m", "app.workers.worker"]
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://pilgibot:${POSTGRES_PASSWORD:-pilgibot-local-only}@db:5432/pilgibot
+    volumes:
+      - files:/data
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      disable: true
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        BACKEND_URL: http://backend:8000
+    restart: unless-stopped
+    ports:
+      # 127.0.0.1 by default: personal use on this computer. For phone access on your
+      # LAN or a public server, set PUBLISH_ADDR=0.0.0.0 AND enable login (see .env).
+      - "${PUBLISH_ADDR:-127.0.0.1}:${PORT:-3000}:3000"
+    depends_on:
+      - backend
+
+volumes:
+  pgdata:
+  files:
